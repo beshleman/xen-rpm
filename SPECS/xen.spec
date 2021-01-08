@@ -28,7 +28,7 @@
 Summary: Xen is a virtual machine monitor
 Name:    xen
 Version: 4.13.1
-Release: 9.8.2%{?dist}
+Release: 9.8.2.0.ocaml410.1%{?dist}
 License: GPLv2 and LGPLv2+ and BSD
 URL:     http://www.xenproject.org
 
@@ -1076,6 +1076,9 @@ touch %{_rundir}/reboot-required.d/%{name}/%{version}-%{release}
 %{?_cov_results_package}
 
 %changelog
+* Fri Jan 08 2021 Samuel Verschelde <stormi-xcp@ylix.fr> - 4.13.1-9.8.2.0.ocaml410.1
+- Rebuild with ocaml 4.10
+
 * Wed Dec 16 2020 Samuel Verschelde <stormi-xcp@ylix.fr> - 4.13.1-9.8.2
 - Security update
 - Related to XSAs 115, 322, 323, 324, 325, 330, 348, 352, 353, 358, 359
