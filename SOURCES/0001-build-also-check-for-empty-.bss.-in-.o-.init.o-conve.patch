@@ -1,0 +1,230 @@
+From 8856a914bffd56c018a794c06d4abb6018aa958d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 27 Aug 2020 09:46:55 +0200
+Subject: [PATCH] build: also check for empty .bss.* in .o -> .init.o
+ conversion
+
+We're gaining such sections, and like .text.* and .data.* they shouldn't
+be present in objects subject to automatic to-init conversion. Oddly
+enough for quite some time we did have an instance breaking this rule,
+which gets fixed at this occasion, by breaking out the EFI boot
+allocator functions into its own translation unit.
+
+Fixes: c5b9805bc1f7 ("efi: create new early memory allocator")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+---
+ xen/Makefile              |  2 +-
+ xen/Rules.mk              |  2 +-
+ xen/arch/arm/efi/Makefile |  2 +-
+ xen/arch/x86/efi/Makefile |  2 +-
+ xen/common/efi/boot.c     | 53 +--------------------------------------
+ xen/common/efi/ebmalloc.c | 52 ++++++++++++++++++++++++++++++++++++++
+ xen/common/efi/efi.h      |  6 +++++
+ 7 files changed, 63 insertions(+), 56 deletions(-)
+ create mode 100644 xen/common/efi/ebmalloc.c
+
+diff --git a/xen/Makefile b/xen/Makefile
+index a87bb225dc..bf0c804d43 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -355,7 +355,7 @@ $(TARGET): delete-unfresh-files
+ 	$(MAKE) -C tools
+ 	$(MAKE) -f $(BASEDIR)/Rules.mk include/xen/compile.h
+ 	[ -e include/asm ] || ln -sf asm-$(TARGET_ARCH) include/asm
+-	[ -e arch/$(TARGET_ARCH)/efi ] && for f in boot.c runtime.c compat.c efi.h;\
++	[ -e arch/$(TARGET_ARCH)/efi ] && for f in $$(cd common/efi; echo *.[ch]); \
+ 		do test -r arch/$(TARGET_ARCH)/efi/$$f || \
+ 		   ln -nsf ../../../common/efi/$$f arch/$(TARGET_ARCH)/efi/; \
+ 		done; \
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index e90a03d116..891c94e6ad 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -226,7 +226,7 @@ $(filter %.init.o,$(obj-y) $(obj-bin-y) $(extra-y)): %.init.o: %.o Makefile
+ 	$(OBJDUMP) -h $< | while read idx name sz rest; do \
+ 		case "$$name" in \
+ 		.*.local) ;; \
+-		.text|.text.*|.data|.data.*|.bss) \
++		.text|.text.*|.data|.data.*|.bss|.bss.*) \
+ 			test $$(echo $$sz | sed 's,00*,0,') != 0 || continue; \
+ 			echo "Error: size of $<:$$name is 0x$$sz" >&2; \
+ 			exit $$(expr $$idx + 1);; \
+diff --git a/xen/arch/arm/efi/Makefile b/xen/arch/arm/efi/Makefile
+index e3ff2c3f28..662892babd 100644
+--- a/xen/arch/arm/efi/Makefile
++++ b/xen/arch/arm/efi/Makefile
+@@ -1,4 +1,4 @@
+ CFLAGS-y += -fshort-wchar
+ 
+-obj-y +=  boot.init.o runtime.o
++obj-y += boot.init.o ebmalloc.o runtime.o
+ obj-$(CONFIG_ACPI) +=  efi-dom0.init.o
+diff --git a/xen/arch/x86/efi/Makefile b/xen/arch/x86/efi/Makefile
+index 4b2b010a80..770438a029 100644
+--- a/xen/arch/x86/efi/Makefile
++++ b/xen/arch/x86/efi/Makefile
+@@ -8,7 +8,7 @@ cmd_objcopy_o_ihex = $(OBJCOPY) -I ihex -O binary $< $@
+ 
+ boot.init.o: buildid.o
+ 
+-EFIOBJ := boot.init.o compat.o runtime.o
++EFIOBJ := boot.init.o ebmalloc.o compat.o runtime.o
+ 
+ $(call cc-option-add,cflags-stack-boundary,CC,-mpreferred-stack-boundary=4)
+ $(EFIOBJ): CFLAGS-stack-boundary := $(cflags-stack-boundary)
+diff --git a/xen/common/efi/boot.c b/xen/common/efi/boot.c
+index 5a520bf21d..4022a672c9 100644
+--- a/xen/common/efi/boot.c
++++ b/xen/common/efi/boot.c
+@@ -112,7 +112,6 @@ static CHAR16 *FormatDec(UINT64 Val, CHAR16 *Buffer);
+ static CHAR16 *FormatHex(UINT64 Val, UINTN Width, CHAR16 *Buffer);
+ static void  DisplayUint(UINT64 Val, INTN Width);
+ static CHAR16 *wstrcpy(CHAR16 *d, const CHAR16 *s);
+-static void noreturn blexit(const CHAR16 *str);
+ static void PrintErrMesg(const CHAR16 *mesg, EFI_STATUS ErrCode);
+ static char *get_value(const struct file *cfg, const char *section,
+                               const char *item);
+@@ -155,56 +154,6 @@ static CHAR16 __initdata newline[] = L"\r\n";
+ #define PrintStr(s) StdOut->OutputString(StdOut, s)
+ #define PrintErr(s) StdErr->OutputString(StdErr, s)
+ 
+-#ifdef CONFIG_ARM
+-/*
+- * TODO: Enable EFI boot allocator on ARM.
+- * This code can be common for x86 and ARM.
+- * Things TODO on ARM before enabling ebmalloc:
+- *   - estimate required EBMALLOC_SIZE value,
+- *   - where (in which section) ebmalloc_mem[] should live; if in
+- *     .bss.page_aligned, as it is right now, then whole BSS zeroing
+- *     have to be disabled in xen/arch/arm/arm64/head.S; though BSS
+- *     should be initialized somehow before use of variables living there,
+- *   - use ebmalloc() in ARM/common EFI boot code,
+- *   - call free_ebmalloc_unused_mem() somewhere in init code.
+- */
+-#define EBMALLOC_SIZE	MB(0)
+-#else
+-#define EBMALLOC_SIZE	MB(1)
+-#endif
+-
+-static char __section(".bss.page_aligned") __aligned(PAGE_SIZE)
+-    ebmalloc_mem[EBMALLOC_SIZE];
+-static unsigned long __initdata ebmalloc_allocated;
+-
+-/* EFI boot allocator. */
+-static void __init __maybe_unused *ebmalloc(size_t size)
+-{
+-    void *ptr = ebmalloc_mem + ebmalloc_allocated;
+-
+-    ebmalloc_allocated += ROUNDUP(size, sizeof(void *));
+-
+-    if ( ebmalloc_allocated > sizeof(ebmalloc_mem) )
+-        blexit(L"Out of static memory\r\n");
+-
+-    return ptr;
+-}
+-
+-static void __init __maybe_unused free_ebmalloc_unused_mem(void)
+-{
+-#if 0 /* FIXME: Putting a hole in the BSS breaks the IOMMU mappings for dom0. */
+-    unsigned long start, end;
+-
+-    start = (unsigned long)ebmalloc_mem + PAGE_ALIGN(ebmalloc_allocated);
+-    end = (unsigned long)ebmalloc_mem + sizeof(ebmalloc_mem);
+-
+-    destroy_xen_mappings(start, end);
+-    init_xenheap_pages(__pa(start), __pa(end));
+-
+-    printk(XENLOG_INFO "Freed %lukB unused BSS memory\n", (end - start) >> 10);
+-#endif
+-}
+-
+ /*
+  * Include architecture specific implementation here, which references the
+  * static globals defined above.
+@@ -321,7 +270,7 @@ static bool __init match_guid(const EFI_GUID *guid1, const EFI_GUID *guid2)
+            !memcmp(guid1->Data4, guid2->Data4, sizeof(guid1->Data4));
+ }
+ 
+-static void __init noreturn blexit(const CHAR16 *str)
++void __init noreturn blexit(const CHAR16 *str)
+ {
+     if ( str )
+         PrintStr((CHAR16 *)str);
+diff --git a/xen/common/efi/ebmalloc.c b/xen/common/efi/ebmalloc.c
+new file mode 100644
+index 0000000000..c65dbd946f
+--- /dev/null
++++ b/xen/common/efi/ebmalloc.c
+@@ -0,0 +1,52 @@
++#include "efi.h"
++#include <xen/init.h>
++
++#ifdef CONFIG_ARM
++/*
++ * TODO: Enable EFI boot allocator on ARM.
++ * This code can be common for x86 and ARM.
++ * Things TODO on ARM before enabling ebmalloc:
++ *   - estimate required EBMALLOC_SIZE value,
++ *   - where (in which section) ebmalloc_mem[] should live; if in
++ *     .bss.page_aligned, as it is right now, then whole BSS zeroing
++ *     have to be disabled in xen/arch/arm/arm64/head.S; though BSS
++ *     should be initialized somehow before use of variables living there,
++ *   - use ebmalloc() in ARM/common EFI boot code,
++ *   - call free_ebmalloc_unused_mem() somewhere in init code.
++ */
++#define EBMALLOC_SIZE	MB(0)
++#else
++#define EBMALLOC_SIZE	MB(1)
++#endif
++
++static char __section(".bss.page_aligned") __aligned(PAGE_SIZE)
++    ebmalloc_mem[EBMALLOC_SIZE];
++static unsigned long __initdata ebmalloc_allocated;
++
++/* EFI boot allocator. */
++void __init *ebmalloc(size_t size)
++{
++    void *ptr = ebmalloc_mem + ebmalloc_allocated;
++
++    ebmalloc_allocated += ROUNDUP(size, sizeof(void *));
++
++    if ( ebmalloc_allocated > sizeof(ebmalloc_mem) )
++        blexit(L"Out of static memory\r\n");
++
++    return ptr;
++}
++
++void __init free_ebmalloc_unused_mem(void)
++{
++#if 0 /* FIXME: Putting a hole in the BSS breaks the IOMMU mappings for dom0. */
++    unsigned long start, end;
++
++    start = (unsigned long)ebmalloc_mem + PAGE_ALIGN(ebmalloc_allocated);
++    end = (unsigned long)ebmalloc_mem + sizeof(ebmalloc_mem);
++
++    destroy_xen_mappings(start, end);
++    init_xenheap_pages(__pa(start), __pa(end));
++
++    printk(XENLOG_INFO "Freed %lukB unused BSS memory\n", (end - start) >> 10);
++#endif
++}
+diff --git a/xen/common/efi/efi.h b/xen/common/efi/efi.h
+index 2e38d05f3d..4845d84913 100644
+--- a/xen/common/efi/efi.h
++++ b/xen/common/efi/efi.h
+@@ -40,4 +40,10 @@ extern UINT64 efi_boot_max_var_store_size, efi_boot_remain_var_store_size,
+ extern UINT64 efi_apple_properties_addr;
+ extern UINTN efi_apple_properties_len;
+ 
++void noreturn blexit(const CHAR16 *str);
++
+ const CHAR16 *wmemchr(const CHAR16 *s, CHAR16 c, UINTN n);
++
++/* EFI boot allocator. */
++void *ebmalloc(size_t size);
++void free_ebmalloc_unused_mem(void);
+-- 
+2.30.0
+

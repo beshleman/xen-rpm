@@ -31,7 +31,7 @@ Version: 4.13.1
 # the xen_extra field can't hold more than 16 chars
 # so instead of using %%release to define XEN_VENDORVERSION
 # we create a base_release macro, that doesn't contain the dist suffix
-%define base_release 9.9.1
+%define base_release 9.9.2
 Release: %{base_release}%{?dist}
 License: GPLv2 and LGPLv2+ and BSD
 URL:     http://www.xenproject.org
@@ -40,6 +40,9 @@ Source0: https://code.citrite.net/rest/archive/latest/projects/XSU/repos/xen/arc
 Source1: SOURCES/xen/sysconfig_kernel-xen
 Source2: SOURCES/xen/xl.conf
 Source3: SOURCES/xen/logrotate-xen-tools
+Source4: test_ca.crt
+Source5: test_ca.key
+Source6: xen.cfg
 
 Patch0: build-tweaks.patch
 Patch1: autoconf-libjson.patch
@@ -260,6 +263,20 @@ Patch215: backport-e373bc1bdc59.patch
 Patch216: backport-b7c333016e3d.patch
 Patch217: xsa360.patch
 
+# For unified EFI
+#Patch250: 0001-xen-build-start-using-if_changed.patch
+Patch300: 0001-build-correctly-report-non-empty-section-sizes-upon-.patch
+Patch400: 0001-build-also-check-for-empty-.bss.-in-.o-.init.o-conve.patch
+Patch500: 0001-EFI-some-easy-constification.patch
+Patch600: 0001-x86-64-EFI-document-building-and-usage.patch
+Patch700: 0001-efi-boot-make-file-ptr-const-void.patch
+Patch725: 0001-efi-boot.c-add-file.need_to_free.patch
+Patch750: 0002-efi-boot.c-add-handle_file_info.patch
+Patch775: 0001-efi-boot-wrap-PrintStr-PrintErr-to-allow-const-CHAR1.patch
+#Patch780: 0001-xen-convert-lto-to-Kconfig-option.patch
+Patch790: 0001-x86-EFI-sanitize-build-logic.patch
+Patch800: 0001-efi-Enable-booting-unified-hypervisor-kernel-initrd-.patch
+
 Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/xen/archive?at=RELEASE-4.13.1&prefix=xen-4.13.1&format=tar.gz#/xen-4.13.1.tar.gz) = 6278553325a9f76d37811923221b21db3882e017
 Provides: gitsha(ssh://git@code.citrite.net/xs/xen.pg.git) = 70d4b5941e4fa18d059d0f62cb3bbf5dab7a7946
 
@@ -471,6 +488,7 @@ echo "${base_cset:0:12}, pq ${pq_cset:0:12}" > .scmversion
 mkdir -p %{buildroot}%{_libdir}/ocaml/stublibs
 
 mkdir -p %{buildroot}/boot/
+mkdir -p %{buildroot}/boot/efi
 
 # Regular build of Xen
 %{__make} %{HVSOR_OPTIONS} -C xen XEN_VENDORVERSION=-%{base_release} \
@@ -484,6 +502,9 @@ cp xen/xen.gz %{buildroot}/boot/%{name}-%{version}-%{base_release}.gz
 cp xen/System.map %{buildroot}/boot/%{name}-%{version}-%{base_release}.map
 cp xen/xen-syms %{buildroot}/boot/%{name}-syms-%{version}-%{base_release}
 cp buildconfigs/config-release %{buildroot}/boot/%{name}-%{version}-%{base_release}.config
+
+cp %{SOURCE6} %{buildroot}/boot/efi/xen.cfg
+cp xen/xen.efi %{buildroot}/boot/efi/%{name}-%{version}-%{base_release}.efi
 
 # Debug build of Xen
 %{__make} %{HVSOR_OPTIONS} -C xen clean
@@ -545,6 +566,10 @@ ln -sf xen-shim-release %{buildroot}/%{_libexecdir}/%{name}/boot/xen-shim
 /boot/%{name}-%{version}-%{base_release}-d.config
 %config %{_sysconfdir}/sysconfig/kernel-xen
 %ghost %attr(0644,root,root) %{_sysconfdir}/sysconfig/kernel-xen-args
+
+# For EFI
+/boot/efi/%{name}-%{version}-%{base_release}.efi
+/boot/efi/xen.cfg
 
 %files hypervisor-debuginfo
 /boot/%{name}-syms-%{version}-%{base_release}

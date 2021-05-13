@@ -1,0 +1,98 @@
+From cb6ae256e844a954170b9d7d2b6fd1e6000bb50e Mon Sep 17 00:00:00 2001
+From: Wei Liu <wei.liu2@citrix.com>
+Date: Mon, 5 Dec 2016 14:39:55 +0000
+Subject: [PATCH] xen: convert lto to Kconfig option
+
+Introduce CONFIG_LTO in Kconfig. Since this is the last option to be
+converted to Kconfig, delete the preceding comment in Rules.mk as well.
+
+Make it depend on BROKEN because it doesn't work at the moment.
+
+Signed-off-by: Wei Liu <wei.liu2@citrix.com>
+Acked-by: Jan Beulich <JBeulich@suse.com>
+---
+ xen/Kconfig           |  8 ++++++++
+ xen/Rules.mk          | 10 ++--------
+ xen/arch/arm/Makefile |  2 +-
+ xen/arch/x86/Makefile |  2 +-
+ 4 files changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/xen/Kconfig b/xen/Kconfig
+index 5515fe9e19..65d491d776 100644
+--- a/xen/Kconfig
++++ b/xen/Kconfig
+@@ -30,4 +30,12 @@ config EXPERT
+ 	string
+ 	option env="XEN_CONFIG_EXPERT"
+ 
++config LTO
++	bool "Link Time Optimisation"
++	depends on BROKEN
++	---help---
++	  Enable Link Time Optimisation.
++
++	  If unsure, say N.
++
+ source "Kconfig.debug"
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index 08cc776ebc..24d13dcad1 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -1,10 +1,4 @@
+ 
+-#
+-# If you change any of these configuration options then you must
+-# 'make clean' before rebuilding.
+-#
+-lto           ?= n
+-
+ -include $(BASEDIR)/include/config/auto.conf
+ 
+ include $(XEN_ROOT)/Config.mk
+@@ -125,7 +119,7 @@ ifeq ($(CONFIG_GCOV),y)
+ $(filter-out %.init.o $(nogcov-y),$(obj-y) $(obj-bin-y) $(extra-y)): CFLAGS += -fprofile-arcs -ftest-coverage
+ endif
+ 
+-ifeq ($(lto),y)
++ifeq ($(CONFIG_LTO),y)
+ # Would like to handle all object files as bitcode, but objects made from
+ # pure asm are in a different format and have to be collected separately.
+ # Mirror the directory tree, collecting them as built_in_bin.o.
+@@ -144,7 +138,7 @@ built_in.o: $(obj-y)
+ ifeq ($(obj-y),)
+ 	$(CC) $(CFLAGS) -c -x c /dev/null -o $@
+ else
+-ifeq ($(lto),y)
++ifeq ($(CONFIG_LTO),y)
+ 	$(LD_LTO) -r -o $@ $^
+ else
+ 	$(LD) $(LDFLAGS) -r -o $@ $^
+diff --git a/xen/arch/arm/Makefile b/xen/arch/arm/Makefile
+index da39d3919d..f165178ab8 100644
+--- a/xen/arch/arm/Makefile
++++ b/xen/arch/arm/Makefile
+@@ -81,7 +81,7 @@ $(TARGET).axf: $(TARGET)-syms
+ 	$(OBJCOPY) --change-addresses +0x80000000 $< $@
+ 	$(STRIP) $@
+ 
+-ifeq ($(lto),y)
++ifeq ($(CONFIG_LTO),y)
+ # Gather all LTO objects together
+ prelink_lto.o: $(ALL_OBJS)
+ 	$(LD_LTO) -r -o $@ $^
+diff --git a/xen/arch/x86/Makefile b/xen/arch/x86/Makefile
+index 931917d1d3..fdcf9770c3 100644
+--- a/xen/arch/x86/Makefile
++++ b/xen/arch/x86/Makefile
+@@ -95,7 +95,7 @@ $(TARGET): $(TARGET)-syms $(efi-y) boot/mkelf32
+ 
+ ALL_OBJS := $(BASEDIR)/arch/x86/boot/built_in.o $(BASEDIR)/arch/x86/efi/built_in.o $(ALL_OBJS)
+ 
+-ifeq ($(lto),y)
++ifeq ($(CONFIG_LTO),y)
+ # Gather all LTO objects together
+ prelink_lto.o: $(ALL_OBJS)
+ 	$(LD_LTO) -r -o $@ $^
+-- 
+2.30.0
+
