@@ -31,7 +31,7 @@ Version: 4.13.1
 # the xen_extra field can't hold more than 16 chars
 # so instead of using %%release to define XEN_VENDORVERSION
 # we create a base_release macro, that doesn't contain the dist suffix
-%define base_release 9.9.2
+%define base_release 9.10.2
 Release: %{base_release}%{?dist}
 License: GPLv2 and LGPLv2+ and BSD
 URL:     http://www.xenproject.org
@@ -40,9 +40,6 @@ Source0: https://code.citrite.net/rest/archive/latest/projects/XSU/repos/xen/arc
 Source1: SOURCES/xen/sysconfig_kernel-xen
 Source2: SOURCES/xen/xl.conf
 Source3: SOURCES/xen/logrotate-xen-tools
-Source4: test_ca.crt
-Source5: test_ca.key
-Source6: xen.cfg
 
 Patch0: build-tweaks.patch
 Patch1: autoconf-libjson.patch
@@ -502,8 +499,6 @@ cp xen/xen.gz %{buildroot}/boot/%{name}-%{version}-%{base_release}.gz
 cp xen/System.map %{buildroot}/boot/%{name}-%{version}-%{base_release}.map
 cp xen/xen-syms %{buildroot}/boot/%{name}-syms-%{version}-%{base_release}
 cp buildconfigs/config-release %{buildroot}/boot/%{name}-%{version}-%{base_release}.config
-
-cp %{SOURCE6} %{buildroot}/boot/efi/xen.cfg
 cp xen/xen.efi %{buildroot}/boot/efi/%{name}-%{version}-%{base_release}.efi
 
 # Debug build of Xen
@@ -569,7 +564,6 @@ ln -sf xen-shim-release %{buildroot}/%{_libexecdir}/%{name}/boot/xen-shim
 
 # For EFI
 /boot/efi/%{name}-%{version}-%{base_release}.efi
-/boot/efi/xen.cfg
 
 %files hypervisor-debuginfo
 /boot/%{name}-syms-%{version}-%{base_release}
