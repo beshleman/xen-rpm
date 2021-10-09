@@ -1,0 +1,65 @@
+From 4dced5df761e36fa2561f6f0f6563b3580d95e7f Mon Sep 17 00:00:00 2001
+Message-Id: <4dced5df761e36fa2561f6f0f6563b3580d95e7f.1633035254.git.bobby.eshleman@gmail.com>
+In-Reply-To: <04be2c3a067899a3860fc2c7bc7a1599502ed1c5.1633035254.git.bobby.eshleman@gmail.com>
+References: <04be2c3a067899a3860fc2c7bc7a1599502ed1c5.1633035254.git.bobby.eshleman@gmail.com>
+From: Trammell Hudson <hudson@trmm.net>
+Date: Fri, 2 Oct 2020 07:18:20 -0400
+Subject: [PATCH 2/3] efi/boot.c: add handle_file_info()
+
+Add a separate function to display the address ranges used by
+the files and call `efi_arch_handle_module()` on the modules.
+
+Signed-off-by: Trammell Hudson <hudson@trmm.net>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+---
+ xen/common/efi/boot.c | 27 +++++++++++++++++----------
+ 1 file changed, 17 insertions(+), 10 deletions(-)
+
+diff --git a/xen/common/efi/boot.c b/xen/common/efi/boot.c
+index 9d6dc8ff4f..bd629eb658 100644
+--- a/xen/common/efi/boot.c
++++ b/xen/common/efi/boot.c
+@@ -547,6 +547,22 @@ static char * __init split_string(char *s)
+     return NULL;
+ }
+ 
++static void __init handle_file_info(CHAR16 *name,
++                                    struct file *file, char *options)
++{
++    if ( file == &cfg )
++        return;
++
++    PrintStr(name);
++    PrintStr(L": ");
++    DisplayUint(file->addr, 2 * sizeof(file->addr));
++    PrintStr(L"-");
++    DisplayUint(file->addr + file->size, 2 * sizeof(file->addr));
++    PrintStr(newline);
++
++    efi_arch_handle_module(file, name, options);
++}
++
+ static bool __init read_file(EFI_FILE_HANDLE dir_handle, CHAR16 *name,
+                              struct file *file, const char *options)
+ {
+@@ -591,16 +607,7 @@ static bool __init read_file(EFI_FILE_HANDLE dir_handle, CHAR16 *name,
+     {
+         file->need_to_free = true;
+         file->size = size;
+-        if ( file != &cfg )
+-        {
+-            PrintStr(name);
+-            PrintStr(L": ");
+-            DisplayUint(file->addr, 2 * sizeof(file->addr));
+-            PrintStr(L"-");
+-            DisplayUint(file->addr + size, 2 * sizeof(file->addr));
+-            PrintStr(newline);
+-            efi_arch_handle_module(file, name, options);
+-        }
++        handle_file_info(name, file, options);
+ 
+         ret = FileHandle->Read(FileHandle, &file->size, file->str);
+         if ( !EFI_ERROR(ret) && file->size != size )
+-- 
+2.32.0
+

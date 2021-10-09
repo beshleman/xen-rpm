@@ -4,6 +4,7 @@
 
 %define with_sysv 0
 %define with_systemd 1
+%define with_efi 1
 
 # Use the production hypervisor by default
 %define default_debug_hypervisor 0
@@ -32,7 +33,7 @@ Version: 4.13.1
 # so instead of using %%release to define XEN_VENDORVERSION
 # we create a base_release macro, that doesn't contain the dist suffix
 %define base_release 9.12.1
-Release: %{base_release}%{?dist}
+Release: %{base_release}.0.hostsb.0%{?dist}
 License: GPLv2 and LGPLv2+ and BSD
 URL:     http://www.xenproject.org
 
@@ -305,6 +306,14 @@ Patch260: backport-b6da9d0414d6.patch
 Patch261: xsa382.patch
 Patch262: xsa384-4.14.patch
 
+# XCP-ng 8.2: Unified Xen EFI
+Patch500: 0001-xen-4.13.1-make-blexit-func-public.patch
+Patch501: 0002-xen-4.13.1-build-symlink-for-all-files-in-common-efi.patch
+Patch502: 0003-xen-4.13.1-efi-boot.c-add-file-need_to_free.patch
+Patch503: 0004-xen-4.13.1-efi-boot.c-add-handle_file_info.patch
+Patch504: 0005-xen-4.13.1-efi-fix-prelink-efi-build.patch
+Patch505: 0006-xen-4.13.1-efi-Enable-booting-unified-hypervisor-kernel-initrd-.patch
+
 Provides: gitsha(https://code.citrite.net/rest/archive/latest/projects/XSU/repos/xen/archive?at=RELEASE-4.13.1&prefix=xen-4.13.1&format=tar.gz#/xen-4.13.1.tar.gz) = 6278553325a9f76d37811923221b21db3882e017
 Provides: gitsha(ssh://git@code.citrite.net/xs/xen.pg.git) = a1d6c0d2636703962baab5ebfa5aec8b2d560443
 
@@ -359,6 +368,10 @@ BuildRequires: systemd-devel
 
 # To placate ./configure
 BuildRequires: gettext-devel glib2-devel curl-devel gnutls-devel
+
+%if %{with_efi}
+BuildRequires: binutils == 2.35-5.xcpng8.2.2
+%endif
 
 # Need cov-analysis if coverity is enabled
 %{?_cov_buildrequires}
@@ -512,6 +525,23 @@ echo "${base_cset:0:12}, pq ${pq_cset:0:12}" > .scmversion
 
 %install
 
+%if %with_efi
+
+
+# Xen's Makefiles decide to build the EFI binary iff the linker supports the
+# PE/COFF+ format. There are no Kconfig options for it and no ./configure
+# options. If the linker doesn't support it, then Xen will happily build just
+# xen.gz and xen-syms and no EFI binary. So, if EFI is desired when `rpmbuild`
+# is invoked, let's at least check that the tools support it and throw an error
+# if they don't, because the Xen build will NOT be so informative.
+if [[ ! "$(ld -V)" =~ "i386pep" ]]; then
+    printf "error: Linker $(which ld) does not support EFI binaries.  " >&2
+    printf "set with_efi to 0 in the RPM or ensure that the" >&2
+    printf "ld that ships with binutils supports i386pep (seen with ld -V)" >&2
+    exit 1
+fi
+%endif
+
 # The existence of this directory causes ocamlfind to put things in it
 mkdir -p %{buildroot}%{_libdir}/ocaml/stublibs
 
@@ -525,6 +555,9 @@ mkdir -p %{buildroot}/boot/
 %{__make} %{HVSOR_OPTIONS} -C xen XEN_VENDORVERSION=-%{base_release} \
     KCONFIG_CONFIG=../buildconfigs/config-release MAP
 
+%if %with_efi
+cp xen/xen.efi %{buildroot}/boot/%{name}-%{version}-%{base_release}.efi
+%endif
 cp xen/xen.gz %{buildroot}/boot/%{name}-%{version}-%{base_release}.gz
 cp xen/System.map %{buildroot}/boot/%{name}-%{version}-%{base_release}.map
 cp xen/xen-syms %{buildroot}/boot/%{name}-syms-%{version}-%{base_release}
@@ -582,6 +615,9 @@ ln -sf xen-shim-release %{buildroot}/%{_libexecdir}/%{name}/boot/xen-shim
 %{?_cov_install}
 
 %files hypervisor
+%if %with_efi
+/boot/%{name}-%{version}-%{base_release}.efi
+%endif
 /boot/%{name}-%{version}-%{base_release}.gz
 /boot/%{name}-%{version}-%{base_release}.map
 /boot/%{name}-%{version}-%{base_release}.config
@@ -1126,6 +1162,9 @@ touch %{_rundir}/reboot-required.d/%{name}/%{version}-%{base_release}
 %{?_cov_results_package}
 
 %changelog
+* Wed Oct 20 2021 Bobby Eshleman <bobby.eshleman@gmail.com> - 4.13.1-9.12.1.hostsb.0
+- Support the Xen unified EFI binary
+
 * Thu Sep 09 2021 Samuel Verschelde <stormi-xcp@ylix.fr> - 4.13.1-9.12.1
 - Security update, synced from hotfix XS82E032
 - Related to XSAs 378, 379, 380, 382, 384
