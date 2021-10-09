@@ -1,0 +1,13 @@
+diff --git a/xen/common/efi/boot.c b/xen/common/efi/boot.c
+index 5a520bf21d..4022a672c9 100644
+--- a/xen/common/efi/boot.c
++++ b/xen/common/efi/boot.c
+@@ -324,7 +324,7 @@ static bool __init match_guid(const EFI_GUID *guid1, const EFI_GUID *guid2)
+            !memcmp(guid1->Data4, guid2->Data4, sizeof(guid1->Data4));
+ }
+ 
+-static void __init noreturn blexit(const CHAR16 *str)
++void __init noreturn blexit(const CHAR16 *str)
+ {
+     if ( str )
+         PrintStr((CHAR16 *)str);

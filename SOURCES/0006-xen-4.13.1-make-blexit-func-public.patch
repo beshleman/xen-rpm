@@ -1,0 +1,31 @@
+diff --git a/xen/common/efi/boot.c b/xen/common/efi/boot.c
+index 8c75c8e..4c6d3fe 100644
+--- a/xen/common/efi/boot.c
++++ b/xen/common/efi/boot.c
+@@ -112,7 +112,6 @@ static CHAR16 *FormatDec(UINT64 Val, CHAR16 *Buffer);
+ static CHAR16 *FormatHex(UINT64 Val, UINTN Width, CHAR16 *Buffer);
+ static void  DisplayUint(UINT64 Val, INTN Width);
+ static CHAR16 *wstrcpy(CHAR16 *d, const CHAR16 *s);
+-static void noreturn blexit(const CHAR16 *str);
+ static void PrintErrMesg(const CHAR16 *mesg, EFI_STATUS ErrCode);
+ static char *get_value(const struct file *cfg, const char *section,
+                               const char *item);
+@@ -325,7 +324,7 @@ static bool __init match_guid(const EFI_GUID *guid1, const EFI_GUID *guid2)
+            !memcmp(guid1->Data4, guid2->Data4, sizeof(guid1->Data4));
+ }
+ 
+-static void __init noreturn blexit(const CHAR16 *str)
++void __init noreturn blexit(const CHAR16 *str)
+ {
+     if ( str )
+         PrintStr((CHAR16 *)str);
+diff --git a/xen/common/efi/efi.h b/xen/common/efi/efi.h
+index 5664ae9..2fe0d0c 100644
+--- a/xen/common/efi/efi.h
++++ b/xen/common/efi/efi.h
+@@ -44,3 +44,5 @@ const CHAR16 *wmemchr(const CHAR16 *s, CHAR16 c, UINTN n);
+ 
+ void *pe_find_section(void *image_base, const size_t image_size,
+                       const CHAR16 *section_name, UINTN *size_out);
++
++void noreturn blexit(const CHAR16 *str);
